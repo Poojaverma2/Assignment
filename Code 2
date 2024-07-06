@@ -1,0 +1,141 @@
+To develop the RESTful APIs for handling the referral form data and connecting them with a MySQL database, we'll use Express.js for the backend server and Prisma ORM for database connectivity. We'll also include error handling and integrate email notification using the Google Mail Service API. Let's walk through the steps to implement this:
+
+### 1. Setup
+
+First, make sure you have Node.js installed on your machine. Then, create a new Node.js project and install necessary packages:
+
+```bash
+mkdir referral-api
+cd referral-api
+npm init -y
+npm install express prisma nodemailer mysql2
+```
+
+### 2. Configure Prisma and MySQL
+
+#### Install Prisma CLI globally (if not already installed):
+
+```bash
+npm install -g prisma
+```
+
+#### Initialize Prisma in your project:
+
+```bash
+npx prisma init
+```
+
+Follow the prompts to set up Prisma with your MySQL database.
+
+### 3. Define Prisma Schema
+
+Modify `schema.prisma` to define your database schema:
+
+```prisma
+// schema.prisma
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Referral {
+  id            Int      @id @default(autoincrement())
+  referrerName  String
+  referrerEmail String
+  friendName    String
+  friendEmail   String
+  createdAt     DateTime @default(now())
+}
+```
+
+Run `npx prisma db push` to apply the schema to your MySQL database.
+
+### 4. Create Express Server and APIs
+
+#### `server.js`
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const { PrismaClient } = require('@prisma/client');
+const nodemailer = require('nodemailer');
+
+const prisma = new PrismaClient();
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(bodyParser.json());
+
+// API endpoint to handle referral form submission
+app.post('/api/referral', async (req, res) => {
+  const { referrerName, referrerEmail, friendName, friendEmail } = req.body;
+
+  // Basic validation
+  if (!referrerName || !referrerEmail || !friendName || !friendEmail) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  try {
+    // Save referral data to database using Prisma
+    const referral = await prisma.referral.create({
+      data: {
+        referrerName,
+        referrerEmail,
+        friendName,
+        friendEmail,
+      },
+    });
+
+    // Send referral email using nodemailer
+    await sendReferralEmail(referral);
+
+    return res.status(201).json(referral);
+  } catch (error) {
+    console.error('Error saving referral:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Function to send referral email
+async function sendReferralEmail(referral) {
+  // Configure nodemailer with Google Mail Service API
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'your-email@gmail.com', // replace with your Gmail email
+      pass: 'your-password', // replace with your Gmail password or app-specific password
+    },
+  });
+
+  const mailOptions = {
+    from: 'your-email@gmail.com',
+    to: referral.friendEmail,
+    subject: 'You have been referred to our platform!',
+    text: `Dear ${referral.friendName},\n\nYou have been referred by ${referral.referrerName} to our platform. Sign up today!`,
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
+```
+
+### 5. Error Handling
+
+Error handling is already implemented in the API endpoint where we check for missing fields and catch any database or email sending errors. You can extend error handling as per your specific requirements.
+
+### 6. Email Notification
+
+The `sendReferralEmail` function uses nodemailer to send an email to the referred friend upon successful submission of the referral form. Ensure you replace `'your-email@gmail.com'` and `'your-password'` with your Gmail credentials or use environment variables for security.
+
+### 7. Testing
+
+Test your APIs using tools like Postman or by making HTTP requests from your frontend application.
